@@ -26,7 +26,10 @@ An Android overlay sidebar for quick access to favorite apps. A pull-tab handle 
 
 ## Installation
 
-Download the latest APK from the [Releases](https://github.com/alkisstam/sidebar/releases) page and sideload it onto your Android device. Enable "Install from unknown sources" in your device settings if prompted.
+Download the latest APK from the [Releases](https://github.com/dayeggpi/sidebar/releases) page and sideload it onto your Android device. Enable "Install from unknown sources" in your device settings if prompted.
+
+Additionally : if the freeform mode windows (floating windows) doesn't seem to work, install Shizuku, and start it, then it should work :)
+
 
 ## Setup
 
@@ -55,6 +58,9 @@ The debug build connects to Metro over USB or Wi-Fi. For a standalone build:
 ```
 npx expo run:android --variant release
 ```
+
+Note: 
+Alternative : run the build-debug.bat to install everything and compile apk file.
 
 ## Project structure
 
