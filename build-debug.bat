@@ -18,7 +18,7 @@ call gradlew.bat clean
 if errorlevel 1 (echo Gradle clean failed & exit /b 1)
 
 echo [4/4] Building debug APK (JS bundled in)...
-call gradlew.bat assembleDebug
+call gradlew.bat assembleRelease
 if errorlevel 1 (echo Gradle build failed & exit /b 1)
 
 echo.
