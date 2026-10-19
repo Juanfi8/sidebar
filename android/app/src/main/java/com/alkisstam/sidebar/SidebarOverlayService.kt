@@ -32,6 +32,7 @@ import androidx.core.app.NotificationCompat
 import org.json.JSONArray
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
+import rikka.shizuku.Shizuku
 
 class SidebarOverlayService : Service() {
 
@@ -85,6 +86,22 @@ class SidebarOverlayService : Service() {
     private val torchCallback = object : CameraManager.TorchCallback() {
         override fun onTorchModeChanged(cameraId: String, enabled: Boolean) {
             if (cameraId == torchCameraId) torchEnabled = enabled
+        }
+    }
+
+    // ── Freeform Chrome ───────────────────────────────────────────────────────
+    private val freeformTitles      = mutableMapOf<Int, View>()
+    private val freeformTitleParams = mutableMapOf<Int, WindowManager.LayoutParams>()
+    private val freeformResizes     = mutableMapOf<Int, View>()
+    private val freeformResizeParams= mutableMapOf<Int, WindowManager.LayoutParams>()
+    private val freeformBounds      = mutableMapOf<Int, Rect>()
+    private val freeformPkgs        = mutableMapOf<Int, String>()
+    private val freeformComponents  = mutableMapOf<Int, String>()
+    private val chromePollHandler   = Handler(Looper.getMainLooper())
+    private val chromePollRunnable  = object : Runnable {
+        override fun run() {
+            pollFreeformTasks()
+            if (freeformTitles.isNotEmpty()) chromePollHandler.postDelayed(this, 2000)
         }
     }
 
@@ -143,11 +160,14 @@ class SidebarOverlayService : Service() {
             } catch (e: Exception) { Log.w(TAG, "Torch init failed", e) }
         }
 
+        Shizuku.addRequestPermissionResultListener(shizukuPermListener)
         if (Settings.canDrawOverlays(this)) {
             Handler(Looper.getMainLooper()).post { addHandle() }
         }
         appLoadExecutor.submit { prefetchAppData() }
     }
+
+    private val shizukuPermListener = Shizuku.OnRequestPermissionResultListener { _, _ -> }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (Settings.canDrawOverlays(this)) {
@@ -158,6 +178,7 @@ class SidebarOverlayService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        Shizuku.removeRequestPermissionResultListener(shizukuPermListener)
         fsHandler.removeCallbacks(fsRunnable)
         appLoadExecutor.shutdown()
         runCatching { unregisterReceiver(screenReceiver) }
@@ -170,7 +191,9 @@ class SidebarOverlayService : Service() {
             allAppsView?.let { runCatching { wm.removeView(it) } }
             allAppsDismissOverlay?.let { runCatching { wm.removeView(it) } }
             contextMenuView?.let { runCatching { wm.removeView(it) } }
+            freeformTitles.keys.toList().forEach { removeFreeformChrome(it) }
         }
+        chromePollHandler.removeCallbacks(chromePollRunnable)
     }
 
     private fun refreshHandle() {
@@ -221,7 +244,8 @@ class SidebarOverlayService : Service() {
         val showQr: Boolean,
         val showDnd: Boolean,
         val showVolume: Boolean,
-        val controlTilesOrder: List<String>
+        val controlTilesOrder: List<String>,
+        val freeformWindows: Boolean
     )
 
     private fun pillPrefs(): PillPrefs {
@@ -313,7 +337,8 @@ class SidebarOverlayService : Service() {
                     val arr = org.json.JSONArray(json)
                     (0 until arr.length()).map { arr.getString(it) }
                 } catch (_: Exception) { default }
-            }
+            },
+            p.getBoolean(Prefs.FREEFORM_WINDOWS, false)
         )
     }
 
@@ -1617,8 +1642,11 @@ class SidebarOverlayService : Service() {
             }
             return
         }
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         try {
+            val freeform = overlayPrefs().freeformWindows
+            Log.d(TAG, "doLaunch $pkg freeform=$freeform shizuku=${Shizuku.pingBinder()}")
+            if (freeform && tryShizukuFreeformLaunch(intent)) return
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             startActivity(intent)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to launch $pkg", e)
@@ -1626,6 +1654,290 @@ class SidebarOverlayService : Service() {
                 Toast.makeText(this, "Failed to launch app", Toast.LENGTH_SHORT).show()
             }
         }
+    }
+
+    private fun tryShizukuFreeformLaunch(intent: Intent): Boolean {
+        try {
+            if (!Shizuku.pingBinder()) {
+                Log.w(TAG, "Shizuku: binder not available")
+                return false
+            }
+            if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
+                Log.w(TAG, "Shizuku: permission not granted — enable freeform in settings to trigger auth")
+                return false
+            }
+            val component = intent.component?.flattenToString()
+            val pkg = intent.component?.packageName
+            if (component == null || pkg == null) {
+                Log.w(TAG, "Shizuku: null component for $intent")
+                return false
+            }
+            Log.d(TAG, "Shizuku: launching $component in freeform")
+            Thread {
+                try {
+                    val s1 = Shizuku.newProcess(
+                        arrayOf("settings", "put", "global", "enable_freeform_support", "1"),
+                        null, null
+                    ).waitFor()
+                    val s2 = Shizuku.newProcess(
+                        arrayOf("settings", "put", "global", "force_resizable_activities", "1"),
+                        null, null
+                    ).waitFor()
+                    Log.d(TAG, "Shizuku: settings exit=$s1/$s2")
+                    val proc = Shizuku.newProcess(
+                        arrayOf("am", "start", "--windowingMode", "5", "-n", component),
+                        null, null
+                    )
+                    val exit = proc.waitFor()
+                    val err = proc.errorStream.bufferedReader().readText()
+                    Log.d(TAG, "Shizuku: am start exit=$exit err='$err'")
+                    if (exit == 0) {
+                        Thread.sleep(900)
+                        val taskInfo = findFreeformTask(pkg)
+                        Log.d(TAG, "Shizuku: freeform task for $pkg = $taskInfo")
+                        if (taskInfo != null) {
+                            val (taskId, bounds) = taskInfo
+                            Shizuku.newProcess(arrayOf("am", "task", "resizeable", "$taskId", "2"), null, null).waitFor()
+                            // Move into desktop windowing so tapping a background fullscreen app
+                            // just unfocuses this task rather than finishing its activity.
+                            runCatching {
+                                Shizuku.newProcess(arrayOf("wm", "shell", "desktopmode", "moveToDesktop", "$taskId"), null, null).waitFor()
+                            }.onFailure { Log.w(TAG, "desktopmode moveToDesktop unavailable: ${it.message}") }
+                            Handler(Looper.getMainLooper()).post {
+                                freeformComponents[taskId] = component
+                                attachFreeformChrome(taskId, pkg, bounds)
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Shizuku freeform process failed: ${e.message}")
+                }
+            }.start()
+            return true
+        } catch (e: Exception) {
+            Log.w(TAG, "Shizuku freeform launch failed: ${e.message}")
+            return false
+        }
+    }
+
+    // ── Freeform Chrome ───────────────────────────────────────────────────────
+
+    private fun findFreeformTask(pkg: String): Pair<Int, Rect>? = try {
+        val proc = Shizuku.newProcess(arrayOf("am", "stack", "list"), null, null)
+        val output = proc.inputStream.bufferedReader().readText()
+        proc.waitFor()
+        val blocks = output.split(Regex("(?=RootTask id=)"))
+        var result: Pair<Int, Rect>? = null
+        for (block in blocks) {
+            if (!block.contains("mWindowingMode=freeform")) continue
+            val taskLine = block.lines().firstOrNull { it.contains("taskId=") && it.contains(pkg) } ?: continue
+            val tid = Regex("""taskId=(\d+)""").find(taskLine)?.groupValues?.get(1)?.toInt() ?: continue
+            val bm  = Regex("""bounds=\[(\d+),(\d+)\]\[(\d+),(\d+)\]""").find(taskLine) ?: continue
+            result = Pair(tid, Rect(bm.groupValues[1].toInt(), bm.groupValues[2].toInt(),
+                                    bm.groupValues[3].toInt(), bm.groupValues[4].toInt()))
+        }
+        result
+    } catch (e: Exception) { Log.w(TAG, "findFreeformTask: ${e.message}"); null }
+
+    private fun attachFreeformChrome(taskId: Int, pkg: String, bounds: Rect) {
+        if (freeformTitles.containsKey(taskId)) return
+        val appName = try { packageManager.getApplicationLabel(
+            packageManager.getApplicationInfo(pkg, 0)).toString() } catch (_: Exception) { pkg }
+        val appIcon: Drawable? = try { packageManager.getApplicationIcon(pkg) } catch (_: Exception) { null }
+        val titleH  = dp(44)
+        val resizeSz = dp(32)
+
+        // Title bar
+        val bar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(10), 0, dp(6), 0)
+            elevation = dp(8).toFloat()
+            background = GradientDrawable().apply {
+                setColor(Color.argb(220, 28, 27, 31))
+                cornerRadii = floatArrayOf(dp(10).toFloat(), dp(10).toFloat(), dp(10).toFloat(), dp(10).toFloat(), 0f, 0f, 0f, 0f)
+            }
+        }
+        appIcon?.let {
+            bar.addView(ImageView(this).apply {
+                setImageDrawable(it)
+                layoutParams = LinearLayout.LayoutParams(dp(18), dp(18)).apply { marginEnd = dp(8) }
+                scaleType = ImageView.ScaleType.FIT_CENTER
+            })
+        }
+        bar.addView(TextView(this).apply {
+            text = appName; textSize = 13f
+            setTextColor(Color.argb(220, 230, 224, 233))
+            maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        bar.addView(TextView(this).apply {
+            text = "⛶"; textSize = 14f; gravity = Gravity.CENTER
+            setTextColor(Color.argb(180, 230, 224, 233))
+            layoutParams = LinearLayout.LayoutParams(dp(40), dp(40))
+            setOnClickListener {
+                val component = freeformComponents[taskId]
+                removeFreeformChrome(taskId)
+                Thread {
+                    runCatching {
+                        if (component != null) {
+                            Shizuku.newProcess(arrayOf("am", "start", "--windowingMode", "1", "-n", component), null, null).waitFor()
+                        }
+                    }
+                }.start()
+            }
+        })
+        bar.addView(TextView(this).apply {
+            text = "✕"; textSize = 15f; gravity = Gravity.CENTER
+            setTextColor(Color.argb(200, 230, 224, 233))
+            layoutParams = LinearLayout.LayoutParams(dp(40), dp(40))
+            setOnClickListener {
+                removeFreeformChrome(taskId)
+                Thread { runCatching { Shizuku.newProcess(arrayOf("am", "force-stop", pkg), null, null).waitFor() } }.start()
+            }
+        })
+
+        val tp = WindowManager.LayoutParams(
+            bounds.width(), titleH, overlayType(),
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            PixelFormat.TRANSLUCENT
+        ).apply { gravity = Gravity.START or Gravity.TOP; x = bounds.left; y = bounds.top - titleH }
+        wm.addView(bar, tp)
+
+        var dX = 0f; var dY = 0f; var dL = 0; var dT = 0
+        bar.setOnTouchListener { _, ev ->
+            when (ev.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    Thread { runCatching { Shizuku.newProcess(
+                        arrayOf("wm", "shell", "desktopmode", "moveTaskToFront", "$taskId"),
+                        null, null).waitFor() } }.start()
+                    dX = ev.rawX; dY = ev.rawY
+                    val b = freeformBounds[taskId] ?: bounds; dL = b.left; dT = b.top; true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = (ev.rawX - dX).toInt(); val dy = (ev.rawY - dY).toInt()
+                    freeformTitleParams[taskId]?.let  { p -> p.x = dL + dx; p.y = dT - titleH + dy; runCatching { wm.updateViewLayout(bar, p) } }
+                    freeformResizeParams[taskId]?.let { p ->
+                        val b = freeformBounds[taskId] ?: return@let
+                        p.x = dL + dx + b.width() - resizeSz; p.y = dT + dy + b.height() - resizeSz
+                        freeformResizes[taskId]?.let { rv -> runCatching { wm.updateViewLayout(rv, p) } }
+                    }
+                    true
+                }
+                MotionEvent.ACTION_UP -> {
+                    val dx = (ev.rawX - dX).toInt(); val dy = (ev.rawY - dY).toInt()
+                    val b = freeformBounds[taskId] ?: return@setOnTouchListener true
+                    val nb = Rect(dL + dx, dT + dy, dL + dx + b.width(), dT + dy + b.height())
+                    freeformBounds[taskId] = nb
+                    freeformTitleParams[taskId]?.let  { p -> p.x = nb.left; p.y = nb.top - titleH; runCatching { wm.updateViewLayout(bar, p) } }
+                    freeformResizeParams[taskId]?.let { p ->
+                        p.x = nb.right - resizeSz; p.y = nb.bottom - resizeSz
+                        freeformResizes[taskId]?.let { rv -> runCatching { wm.updateViewLayout(rv, p) } }
+                    }
+                    Thread { runCatching { Shizuku.newProcess(arrayOf("am", "task", "resize", "$taskId",
+                        "${nb.left}", "${nb.top}", "${nb.right}", "${nb.bottom}"), null, null).waitFor() } }.start()
+                    true
+                }
+                else -> false
+            }
+        }
+
+        // Resize handle
+        val rh = View(this).apply {
+            elevation = dp(8).toFloat()
+            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.argb(160, 80, 80, 110)) }
+        }
+        val rp = WindowManager.LayoutParams(
+            resizeSz, resizeSz, overlayType(),
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            PixelFormat.TRANSLUCENT
+        ).apply { gravity = Gravity.START or Gravity.TOP; x = bounds.right - resizeSz; y = bounds.bottom - resizeSz }
+        wm.addView(rh, rp)
+
+        var rX = 0f; var rY = 0f; var rR = 0; var rB = 0
+        rh.setOnTouchListener { _, ev ->
+            when (ev.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    rX = ev.rawX; rY = ev.rawY
+                    val b = freeformBounds[taskId] ?: return@setOnTouchListener false; rR = b.right; rB = b.bottom; true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = (ev.rawX - rX).toInt(); val dy = (ev.rawY - rY).toInt()
+                    freeformResizeParams[taskId]?.let { p -> p.x = rR + dx - resizeSz; p.y = rB + dy - resizeSz; runCatching { wm.updateViewLayout(rh, p) } }
+                    true
+                }
+                MotionEvent.ACTION_UP -> {
+                    val dx = (ev.rawX - rX).toInt(); val dy = (ev.rawY - rY).toInt()
+                    val b = freeformBounds[taskId] ?: return@setOnTouchListener true
+                    val minPx = dp(220)
+                    val nb = Rect(b.left, b.top, maxOf(b.left + minPx, rR + dx), maxOf(b.top + minPx, rB + dy))
+                    freeformBounds[taskId] = nb
+                    freeformTitleParams[taskId]?.let  { p -> p.width = nb.width(); p.x = nb.left; runCatching { wm.updateViewLayout(bar, p) } }
+                    freeformResizeParams[taskId]?.let { p -> p.x = nb.right - resizeSz; p.y = nb.bottom - resizeSz; runCatching { wm.updateViewLayout(rh, p) } }
+                    Thread { runCatching { Shizuku.newProcess(arrayOf("am", "task", "resize", "$taskId",
+                        "${nb.left}", "${nb.top}", "${nb.right}", "${nb.bottom}"), null, null).waitFor() } }.start()
+                    true
+                }
+                else -> false
+            }
+        }
+
+        freeformTitles[taskId]       = bar
+        freeformTitleParams[taskId]  = tp
+        freeformResizes[taskId]      = rh
+        freeformResizeParams[taskId] = rp
+        freeformBounds[taskId]       = bounds
+        freeformPkgs[taskId]         = pkg
+        if (freeformTitles.size == 1) {
+            chromePollHandler.postDelayed(chromePollRunnable, 2000)
+            // Enable desktop mode globally as a fallback; keeps freeform tasks alive
+            // when a fullscreen app takes focus (moveToDesktop per-task may not exist on all builds).
+            Thread { runCatching { Shizuku.newProcess(arrayOf("wm", "shell", "desktopmode", "active", "1"), null, null).waitFor() } }.start()
+        }
+    }
+
+    private fun removeFreeformChrome(taskId: Int) {
+        freeformTitles.remove(taskId)?.let       { runCatching { wm.removeView(it) } }
+        freeformResizes.remove(taskId)?.let      { runCatching { wm.removeView(it) } }
+        freeformTitleParams.remove(taskId)
+        freeformResizeParams.remove(taskId)
+        freeformBounds.remove(taskId)
+        freeformPkgs.remove(taskId)
+        freeformComponents.remove(taskId)
+        if (freeformTitles.isEmpty()) {
+            chromePollHandler.removeCallbacks(chromePollRunnable)
+            Thread { runCatching { Shizuku.newProcess(arrayOf("wm", "shell", "desktopmode", "active", "0"), null, null).waitFor() } }.start()
+        }
+    }
+
+    private fun pollFreeformTasks() {
+        if (freeformTitles.isEmpty()) return
+        Thread {
+            try {
+                val proc = Shizuku.newProcess(arrayOf("am", "stack", "list"), null, null)
+                val output = proc.inputStream.bufferedReader().readText()
+                proc.waitFor()
+                val gone = mutableListOf<Int>()
+                val behind = mutableListOf<Int>()
+                for (id in freeformTitles.keys) {
+                    val line = output.lines().firstOrNull { it.contains("taskId=$id") }
+                    if (line == null) gone.add(id) else if (line.contains("visible=false")) behind.add(id)
+                }
+                if (gone.isNotEmpty()) Handler(Looper.getMainLooper()).post { gone.forEach { removeFreeformChrome(it) } }
+                for (id in behind) {
+                    val b = freeformBounds[id] ?: continue
+                    runCatching { Shizuku.newProcess(arrayOf("am", "task", "resizeable", "$id", "2"), null, null).waitFor() }
+                    runCatching { Shizuku.newProcess(arrayOf("am", "task", "resize", "$id",
+                        "${b.left}", "${b.top}", "${b.right}", "${b.bottom}"), null, null).waitFor() }
+                }
+            } catch (_: Exception) {}
+        }.start()
     }
 
     private fun showAppContextMenu(pkg: String, name: String, anchor: View) {
@@ -1821,5 +2133,6 @@ class SidebarOverlayService : Service() {
 
     companion object {
         private const val TAG = "SidebarOverlayService"
+        private const val SHIZUKU_PERM_CODE = 1001
     }
 }
