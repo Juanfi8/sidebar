@@ -24,6 +24,8 @@ export interface PillSettings {
   theme: 'light' | 'dark';
   themeChoice: 'light' | 'dark' | 'system';
   panelColor: string;
+  handleColor: string;
+  panelBorderColor: string;
 }
 
 export interface OverlaySettings {

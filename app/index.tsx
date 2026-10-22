@@ -40,8 +40,15 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
 ];
 
 const DEFAULT_PILL: PillSettings = {
-  height: 80, width: 10, position: 0.5, side: "right", opacity: 0.5, theme: "dark", themeChoice: "system", panelColor: "",
+  height: 80, width: 10, position: 0.5, side: "right", opacity: 0.5, theme: "dark", themeChoice: "system", panelColor: "", handleColor: "", panelBorderColor: "",
 };
+
+const COLOR_TARGETS = [
+  { key: "panelColor", label: "Expanded", description: "Background of the expanded panel and its popups" },
+  { key: "handleColor", label: "Closed", description: "Background of the pull-tab handle when the panel is closed" },
+  { key: "panelBorderColor", label: "Border", description: "Outline of the expanded panel and its popups" },
+] as const;
+type ColorTarget = typeof COLOR_TARGETS[number]["key"];
 
 const PANEL_COLORS: { key: string }[] = [
   { key: "" },
@@ -143,6 +150,8 @@ export default function Index() {
   const [overlay, setOverlay] = useState<OverlaySettings>(DEFAULT_OVERLAY);
   const pillInitRef = useRef(false);
   const overlayInitRef = useRef(false);
+  const [colorTarget, setColorTarget] = useState<ColorTarget>("panelColor");
+  const selectedColor = pill[colorTarget];
   const [hexInput, setHexInput] = useState("");
   const [showHexInput, setShowHexInput] = useState(false);
   const [gestureMenuOpen, setGestureMenuOpen] = useState<string | null>(null);
@@ -164,10 +173,10 @@ export default function Index() {
   const applyHex = useCallback(() => {
     const hex = hexInput.startsWith("#") ? hexInput : "#" + hexInput;
     if (/^#[0-9A-Fa-f]{6}$/.test(hex)) {
-      setPill(p => ({ ...p, panelColor: hex.toUpperCase() }));
+      setPill(p => ({ ...p, [colorTarget]: hex.toUpperCase() }));
       setShowHexInput(false);
     }
-  }, [hexInput]);
+  }, [hexInput, colorTarget]);
 
   const [allApps, setAllApps] = useState<InstalledApp[]>([]);
   const [listData, setListData] = useState<FavItem[]>([]);
@@ -435,13 +444,38 @@ export default function Index() {
               </View>
               <View style={s.separator} />
               <View style={[s.settingRow, { alignItems: "flex-start", paddingTop: 14, paddingBottom: 14 }]}>
-                <Text style={[s.settingLabel, { paddingTop: 5 }]}>Color</Text>
+                <Text style={[s.settingLabel, { paddingTop: 5 }]}>Colors</Text>
                 <View style={{ flex: 1 }}>
+                  <View style={[s.segmented, { flex: 0, marginBottom: 10 }]}>
+                    {COLOR_TARGETS.map(target => (
+                      <Pressable
+                        key={target.key}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: colorTarget === target.key }}
+                        accessibilityLabel={`${target.label} color`}
+                        style={[s.segBtnSm, colorTarget === target.key && s.segBtnActive]}
+                        onPress={() => {
+                          setColorTarget(target.key);
+                          setShowHexInput(false);
+                          setHexInput("");
+                        }}
+                      >
+                        <Text style={[s.segBtnSmText, colorTarget === target.key && s.segBtnTextActive]}>{target.label}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                  <Text style={[s.rowSub, { marginBottom: 12 }]}>
+                    {COLOR_TARGETS.find(target => target.key === colorTarget)?.description}
+                  </Text>
                   <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
                     {PANEL_COLORS.map(c => {
-                      const sel = pill.panelColor === c.key;
+                      const sel = selectedColor === c.key;
                       return (
-                        <Pressable key={c.key} onPress={() => { setPill(p => ({ ...p, panelColor: c.key })); setShowHexInput(false); }}>
+                        <Pressable key={c.key}
+                          accessibilityRole="button"
+                          accessibilityLabel={c.key || "Default color"}
+                          accessibilityState={{ selected: sel }}
+                          onPress={() => { setPill(p => ({ ...p, [colorTarget]: c.key })); setShowHexInput(false); }}>
                           <View style={{
                             width: 34, height: 34, borderRadius: 17,
                             borderWidth: 2.5,
@@ -450,8 +484,8 @@ export default function Index() {
                           }}>
                             {c.key === "" ? (
                               <View style={{ width: 26, height: 26, borderRadius: 13, overflow: "hidden", flexDirection: "row" }}>
-                                <View style={{ flex: 1, backgroundColor: "#1C1B1F" }} />
-                                <View style={{ flex: 1, backgroundColor: "#FFFBFE" }} />
+                                <View style={{ flex: 1, backgroundColor: colorTarget === "panelBorderColor" ? "#39FF14" : "#1C1B1F" }} />
+                                <View style={{ flex: 1, backgroundColor: colorTarget === "panelBorderColor" ? "#39FF14" : "#FFFBFE" }} />
                               </View>
                             ) : (
                               <View style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: c.key }} />
@@ -462,9 +496,9 @@ export default function Index() {
                     })}
                     {/* Custom swatch */}
                     {(() => {
-                      const isCustom = pill.panelColor !== "" && !PANEL_COLORS.some(c => c.key === pill.panelColor);
+                      const isCustom = selectedColor !== "" && !PANEL_COLORS.some(c => c.key === selectedColor);
                       return (
-                        <Pressable onPress={() => { setHexInput(isCustom ? pill.panelColor : ""); setShowHexInput(v => !v); }}>
+                        <Pressable accessibilityRole="button" accessibilityLabel="Custom color" onPress={() => { setHexInput(isCustom ? selectedColor : ""); setShowHexInput(v => !v); }}>
                           <View style={{
                             width: 34, height: 34, borderRadius: 17,
                             borderWidth: 2.5,
@@ -472,7 +506,7 @@ export default function Index() {
                             justifyContent: "center", alignItems: "center",
                           }}>
                             {isCustom ? (
-                              <View style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: pill.panelColor }} />
+                              <View style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: selectedColor }} />
                             ) : (
                               <View style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: colors.surfaceContainerHigh, justifyContent: "center", alignItems: "center" }}>
                                 <Ionicons name="pencil-outline" size={13} color={colors.subtext} />
@@ -486,11 +520,12 @@ export default function Index() {
                   {showHexInput && (
                     <View style={{ marginTop: 12 }}>
                       <ColorPicker
-                        value={/^#[0-9A-Fa-f]{6}$/.test(pill.panelColor) ? pill.panelColor : '#6750A4'}
+                        key={colorTarget}
+                        value={/^#[0-9A-Fa-f]{6}$/.test(selectedColor) ? selectedColor : '#6750A4'}
                         onChangeJS={({ hex }) => setHexInput(hex.toUpperCase())}
                         onCompleteJS={({ hex }) => {
                           const h = hex.toUpperCase();
-                          setPill(p => ({ ...p, panelColor: h }));
+                          setPill(p => ({ ...p, [colorTarget]: h }));
                           setHexInput(h);
                         }}
                       >
@@ -500,6 +535,7 @@ export default function Index() {
                       </ColorPicker>
                       <View style={{ flexDirection: "row", alignItems: "center", marginTop: 10, gap: 8 }}>
                         <TextInput
+                          accessibilityLabel="Color hex code"
                           value={hexInput}
                           onChangeText={setHexInput}
                           placeholder="#RRGGBB"

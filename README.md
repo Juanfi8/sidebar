@@ -16,7 +16,7 @@ An Android overlay sidebar for quick access to favorite apps. A pull-tab handle 
 - Persists across reboots via a foreground service and boot receiver
 - Auto-hides in fullscreen apps (configurable); battery-friendly polling that pauses when the screen is off
 - **Material You** config UI with dynamic wallpaper colors on Android 12+; four tabs (Handle, Behavior, Control, Apps) with swipe navigation
-- **Handle tab**: side (left / right / both), theme (dark / light / system), panel color picker (8 presets + color wheel), position, height, width, opacity
+- **Handle tab**: side (left / right / both), theme (dark / light / system), separate expanded-panel background, closed-handle background, and panel border colors (presets, color wheel, or hex code), position, height, width, opacity
 - **Behavior tab**: auto-hide in fullscreen, app labels, vibration feedback, swipe sensitivity, pill gesture mapping, recent apps toggle, keyboard-on-All-Apps toggle
 - **Control tab**: redesigned icon grid with Active Controls strip (drag-to-reorder) and All Controls grid (tap to toggle); permission management for overlay, Do Not Disturb, system settings, and Usage Access
 

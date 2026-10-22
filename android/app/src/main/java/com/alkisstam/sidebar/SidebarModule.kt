@@ -140,6 +140,8 @@ class SidebarModule(private val reactContext: ReactApplicationContext) :
         if (settings.hasKey("theme")) prefs.putString(Prefs.PILL_THEME, settings.getString("theme"))
         if (settings.hasKey("themeChoice")) prefs.putString(Prefs.THEME_CHOICE, settings.getString("themeChoice"))
         if (settings.hasKey("panelColor")) prefs.putString(Prefs.PANEL_COLOR, settings.getString("panelColor") ?: "")
+        if (settings.hasKey("handleColor")) prefs.putString(Prefs.HANDLE_COLOR, settings.getString("handleColor") ?: "")
+        if (settings.hasKey("panelBorderColor")) prefs.putString(Prefs.PANEL_BORDER_COLOR, settings.getString("panelBorderColor") ?: "")
         prefs.apply()
         val serviceEnabled = reactContext.getSharedPreferences(Prefs.FILE, Context.MODE_PRIVATE)
             .getBoolean(Prefs.SERVICE_ENABLED, false)
@@ -168,6 +170,9 @@ class SidebarModule(private val reactContext: ReactApplicationContext) :
             ?: prefs.getString(Prefs.PILL_THEME, null) ?: "system"
         map.putString("themeChoice", savedThemeChoice)
         map.putString("panelColor", prefs.getString(Prefs.PANEL_COLOR, "") ?: "")
+        // Preserve the old shared color until a separate handle color is saved.
+        map.putString("handleColor", prefs.getString(Prefs.HANDLE_COLOR, prefs.getString(Prefs.PANEL_COLOR, "")) ?: "")
+        map.putString("panelBorderColor", prefs.getString(Prefs.PANEL_BORDER_COLOR, "") ?: "")
         promise.resolve(map)
     }
 

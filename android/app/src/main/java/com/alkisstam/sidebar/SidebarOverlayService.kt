@@ -216,7 +216,7 @@ class SidebarOverlayService : Service() {
     data class PillPrefs(
         val height: Int, val width: Int, val position: Float,
         val side: String, val opacity: Float, val theme: String,
-        val panelColor: String
+        val panelColor: String, val handleColor: String, val panelBorderColor: String
     )
 
     data class OverlayPrefs(
@@ -263,7 +263,9 @@ class SidebarOverlayService : Service() {
             p.getString(Prefs.PILL_SIDE, "right") ?: "right",
             p.getFloat(Prefs.PILL_OPACITY, 1.0f),
             theme,
-            p.getString(Prefs.PANEL_COLOR, "") ?: ""
+            p.getString(Prefs.PANEL_COLOR, "") ?: "",
+            p.getString(Prefs.HANDLE_COLOR, p.getString(Prefs.PANEL_COLOR, "")) ?: "",
+            p.getString(Prefs.PANEL_BORDER_COLOR, "") ?: ""
         )
     }
 
@@ -294,7 +296,9 @@ class SidebarOverlayService : Service() {
         return Color.HSVToColor(255, hsv)
     }
 
-    private val panelOutlineColor = Color.parseColor("#39FF14")
+    private val panelOutlineColor: Int
+        get() = runCatching { Color.parseColor(pillPrefs().panelBorderColor) }
+            .getOrDefault(Color.parseColor("#39FF14"))
 
     private fun makeOutlinedPanelBackground(panelBg: Int, cornerRadiusDp: Int): GradientDrawable =
         GradientDrawable().apply {
@@ -366,7 +370,7 @@ class SidebarOverlayService : Service() {
 
     private fun buildHandle(prefs: PillPrefs, oPrefs: OverlayPrefs, side: String): Pair<View, View> {
         val pill = View(this).apply {
-            background = PullTabDrawable(highlighted = false, prefs.theme, prefs.panelColor)
+            background = PullTabDrawable(highlighted = false, prefs.theme, prefs.handleColor)
             alpha = prefs.opacity
         }
         val container = FrameLayout(this).apply {
