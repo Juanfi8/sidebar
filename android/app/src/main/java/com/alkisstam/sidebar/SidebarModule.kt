@@ -209,6 +209,8 @@ class SidebarModule(private val reactContext: ReactApplicationContext) :
         map.putString("controlTilesOrder", prefs.getString(Prefs.CONTROL_TILES_ORDER,
             "[\"torch\",\"rotate\",\"brightness\",\"ringer\",\"share\",\"power\",\"qr\",\"dnd\"]"))
         map.putBoolean("freeformWindows", prefs.getBoolean(Prefs.FREEFORM_WINDOWS, false))
+        map.putBoolean("showMediaPlayer", prefs.getBoolean(Prefs.SHOW_MEDIA_PLAYER, false))
+        map.putString("mediaApps", JSONArray(Prefs.mediaApps(prefs).toList()).toString())
         promise.resolve(map)
     }
 
@@ -241,6 +243,8 @@ class SidebarModule(private val reactContext: ReactApplicationContext) :
         if (settings.hasKey("showVolume")) prefs.putBoolean(Prefs.SHOW_VOLUME, settings.getBoolean("showVolume"))
         if (settings.hasKey("controlTilesOrder")) prefs.putString(Prefs.CONTROL_TILES_ORDER, settings.getString("controlTilesOrder"))
         if (settings.hasKey("freeformWindows")) prefs.putBoolean(Prefs.FREEFORM_WINDOWS, settings.getBoolean("freeformWindows"))
+        if (settings.hasKey("showMediaPlayer")) prefs.putBoolean(Prefs.SHOW_MEDIA_PLAYER, settings.getBoolean("showMediaPlayer"))
+        if (settings.hasKey("mediaApps")) prefs.putString(Prefs.MEDIA_APPS, settings.getString("mediaApps") ?: "[]")
         prefs.apply()
         val serviceEnabled = reactContext.getSharedPreferences(Prefs.FILE, Context.MODE_PRIVATE)
             .getBoolean(Prefs.SERVICE_ENABLED, false)
@@ -300,6 +304,21 @@ class SidebarModule(private val reactContext: ReactApplicationContext) :
             appOps.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, android.os.Process.myUid(), reactContext.packageName)
         }
         promise.resolve(mode == AppOpsManager.MODE_ALLOWED)
+    }
+
+    @ReactMethod
+    fun hasMediaAccessPermission(promise: Promise) {
+        promise.resolve(SidebarMediaAccess.isGranted(reactContext))
+    }
+
+    @ReactMethod
+    fun requestMediaAccessPermission(promise: Promise) {
+        try {
+            SidebarMediaAccess.openSettings(reactContext)
+            promise.resolve(null)
+        } catch (e: Exception) {
+            promise.reject("ERR_MEDIA_ACCESS", "Could not open notification access settings", e)
+        }
     }
 
     @ReactMethod

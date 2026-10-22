@@ -26,6 +26,7 @@ import DraggableFlatList, {
 import ColorPicker, { HueCircular, Panel1 } from "reanimated-color-picker";
 import Sidebar, { InstalledApp, OverlaySettings, PillSettings } from "../modules/sidebar";
 import { SliderRow } from "../src/components/SliderRow";
+import { MediaPlayerSettings } from "../src/components/media-player-settings";
 import { makeColors, makeStyles } from "../src/theme";
 import { useAppTheme } from "../src/ThemeContext";
 
@@ -76,6 +77,8 @@ const DEFAULT_OVERLAY: OverlaySettings = {
   showVolume: true,
   controlTilesOrder: ['torch','rotate','brightness','ringer','share','power','qr','dnd'],
   freeformWindows: false,
+  showMediaPlayer: false,
+  mediaApps: [],
 };
 
 const CONTROL_TILES = [
@@ -209,7 +212,7 @@ export default function Index() {
       setServiceEnabled(svc);
       setPill({ ...DEFAULT_PILL, ...pillSettings });
       setThemeChoice(pillSettings.themeChoice ?? pillSettings.theme);
-      setOverlay(overlaySettings);
+      setOverlay({ ...DEFAULT_OVERLAY, ...overlaySettings });
       if (overlaySettings.quickControlsEnabled) {
         setQuickControlsExpanded(true);
         expandAnim.setValue(1);
@@ -811,6 +814,12 @@ export default function Index() {
                 </View>
               </Animated.View>
             </View>
+            <MediaPlayerSettings
+              settings={{ showMediaPlayer: overlay.showMediaPlayer, mediaApps: overlay.mediaApps }}
+              onChange={settings => setOverlay(previous => ({ ...previous, ...settings }))}
+              colors={colors}
+              s={s}
+            />
             {(() => {
               const granted = [permissionGranted, dndPerm, writePerm, usagePerm].filter(Boolean).length;
               return (

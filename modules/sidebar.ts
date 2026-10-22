@@ -56,6 +56,8 @@ export interface OverlaySettings {
   showVolume: boolean;
   controlTilesOrder: string[];
   freeformWindows: boolean;
+  showMediaPlayer: boolean;
+  mediaApps: string[];
 }
 
 export default {
@@ -95,12 +97,14 @@ export default {
       controlTilesOrder: typeof s.controlTilesOrder === 'string'
         ? JSON.parse(s.controlTilesOrder)
         : s.controlTilesOrder,
+      mediaApps: typeof s.mediaApps === 'string' ? JSON.parse(s.mediaApps) : s.mediaApps ?? [],
     }));
   },
   saveOverlaySettings(settings: OverlaySettings): Promise<void> {
     const payload = {
       ...settings,
       controlTilesOrder: JSON.stringify(settings.controlTilesOrder),
+      mediaApps: JSON.stringify(settings.mediaApps),
     };
     return SidebarModule.saveOverlaySettings(payload);
   },
@@ -127,6 +131,12 @@ export default {
   },
   hasShizukuPermission(): Promise<'granted' | 'denied' | 'not_running'> {
     return SidebarModule.hasShizukuPermission();
+  },
+  hasMediaAccessPermission(): Promise<boolean> {
+    return SidebarModule.hasMediaAccessPermission();
+  },
+  requestMediaAccessPermission(): Promise<void> {
+    return SidebarModule.requestMediaAccessPermission();
   },
   requestShizukuPermission(): Promise<'granted' | 'requested' | 'not_running' | 'error'> {
     return SidebarModule.requestShizukuPermission();

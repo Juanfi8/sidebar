@@ -188,6 +188,8 @@ class SidebarOverlayService : Service() {
             handleView?.let { runCatching { wm.removeView(it) } }
             handleViewAlt?.let { runCatching { wm.removeView(it) } }
             panelView?.let { runCatching { wm.removeView(it) } }
+            controlsPanelView?.let { runCatching { wm.removeView(it) } }
+            volumePanelView?.let { runCatching { wm.removeView(it) } }
             dismissOverlay?.let { runCatching { wm.removeView(it) } }
             allAppsView?.let { runCatching { wm.removeView(it) } }
             allAppsDismissOverlay?.let { runCatching { wm.removeView(it) } }
@@ -247,7 +249,8 @@ class SidebarOverlayService : Service() {
         val showDnd: Boolean,
         val showVolume: Boolean,
         val controlTilesOrder: List<String>,
-        val freeformWindows: Boolean
+        val freeformWindows: Boolean,
+        val showMediaPlayer: Boolean
     )
 
     private fun pillPrefs(): PillPrefs {
@@ -352,7 +355,8 @@ class SidebarOverlayService : Service() {
                     (0 until arr.length()).map { arr.getString(it) }
                 } catch (_: Exception) { default }
             },
-            p.getBoolean(Prefs.FREEFORM_WINDOWS, false)
+            p.getBoolean(Prefs.FREEFORM_WINDOWS, false),
+            p.getBoolean(Prefs.SHOW_MEDIA_PLAYER, false)
         )
     }
 
@@ -714,6 +718,25 @@ class SidebarOverlayService : Service() {
             ).apply { bottomMargin = dp(6) })
         }
 
+        if (oPrefs.showMediaPlayer) {
+            val textColor = contrastForeground(ColorUtils.compositeColors(tileBg, panelBg))
+            ctrl.addView(SidebarMediaPlayerView(this, tileActive, textColor, tileBg,
+                onConfigure = {
+                    hidePanel()
+                    getSharedPreferences(Prefs.FILE, MODE_PRIVATE).edit().putString(Prefs.LAUNCH_TAB, "control").apply()
+                    packageManager.getLaunchIntentForPackage(packageName)
+                        ?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)?.let { startActivity(it) }
+                },
+                onGrantAccess = {
+                    hidePanel()
+                    runCatching { SidebarMediaAccess.openSettings(this) }.onFailure {
+                        Toast.makeText(this, "Open notification access in Android settings", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            ), LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(8) })
+        }
+
         val tileBuilders: Map<String, (() -> View)?> = mapOf(
             "torch"      to (if (oPrefs.showTorch)        ({ makeControlTile("Torch",   { "" }, tileBg, tileActive, { torchEnabled },          { if (torchEnabled) "On" else "Off" })           { toggleTorch() } }) else null),
             "rotate"     to (if (oPrefs.showAutoRotate)   ({ makeControlTile("Rotate",  { "" }, tileBg, tileActive, { isAutoRotateEnabled() },  { if (isAutoRotateEnabled()) "On" else "Off" })  { toggleAutoRotate() } }) else null),
@@ -772,21 +795,41 @@ class SidebarOverlayService : Service() {
         val screenHeight = resources.displayMetrics.heightPixels
         val panelGravity = if (effectiveSide == "left") Gravity.START or Gravity.TOP
                            else Gravity.END or Gravity.TOP
-        wm.addView(ctrl, WindowManager.LayoutParams(
+        // Keep the media widget and every control reachable on short screens.
+        val maxHeight = maxOf(dp(1), screenHeight - dp(16))
+        val scroll = object : ScrollView(this) {
+            override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+                super.onMeasure(widthMeasureSpec, View.MeasureSpec.makeMeasureSpec(maxHeight, View.MeasureSpec.AT_MOST))
+            }
+        }.apply {
+            isFillViewport = false
+            addView(ctrl)
+        }
+        scroll.measure(View.MeasureSpec.makeMeasureSpec(dp(220), View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(maxHeight, View.MeasureSpec.AT_MOST))
+        val params = WindowManager.LayoutParams(
             dp(220), WindowManager.LayoutParams.WRAP_CONTENT,
             overlayType(),
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                     WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                     WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
-        ).apply { gravity = panelGravity; x = dp(76); y = panelY.coerceIn(0, maxOf(0, screenHeight - dp(200))) })
+        ).apply { gravity = panelGravity; x = dp(76); y = panelY.coerceIn(0, maxOf(0, screenHeight - scroll.measuredHeight)) }
+        scroll.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            val newY = panelY.coerceIn(0, maxOf(0, screenHeight - scroll.height))
+            if (params.y != newY && scroll.isAttachedToWindow) {
+                params.y = newY
+                runCatching { wm.updateViewLayout(scroll, params) }
+            }
+        }
+        wm.addView(scroll, params)
 
-        controlsPanelView = ctrl
+        controlsPanelView = scroll
 
         val slideFrom = if (effectiveSide == "left") -dp(220).toFloat() else dp(220).toFloat()
-        ctrl.translationX = slideFrom
-        ctrl.alpha = 0f
-        ctrl.animate().withLayer()
+        scroll.translationX = slideFrom
+        scroll.alpha = 0f
+        scroll.animate().withLayer()
             .translationX(0f).alpha(1f)
             .setDuration(220).setInterpolator(DecelerateInterpolator(2.5f))
             .start()

@@ -42,4 +42,11 @@ internal object Prefs {
     const val SHOW_VOLUME         = "show_volume"
     const val CONTROL_TILES_ORDER = "control_tiles_order"
     const val FREEFORM_WINDOWS   = "freeform_windows"
+    const val SHOW_MEDIA_PLAYER = "show_media_player"
+    const val MEDIA_APPS = "media_apps"
+
+    fun mediaApps(prefs: android.content.SharedPreferences): Set<String> = try {
+        val apps = org.json.JSONArray(prefs.getString(MEDIA_APPS, "[]") ?: "[]")
+        (0 until apps.length()).map { apps.optString(it) }.filter { it.isNotBlank() }.toSet()
+    } catch (_: org.json.JSONException) { emptySet() }
 }
