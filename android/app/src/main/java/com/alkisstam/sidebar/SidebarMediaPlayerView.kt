@@ -54,6 +54,7 @@ internal class SidebarMediaPlayerView(
         scaleType = ImageView.ScaleType.CENTER_CROP
         background = shape(ColorUtils.setAlphaComponent(textColor, 24), 8)
         clipToOutline = true
+        isHapticFeedbackEnabled = false
         isFocusable = true
         setOnClickListener { openPlayingApp() }
     }

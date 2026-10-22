@@ -722,7 +722,10 @@ class SidebarOverlayService : Service() {
             val textColor = contrastForeground(ColorUtils.compositeColors(tileBg, panelBg))
             ctrl.addView(SidebarMediaPlayerView(this, tileActive, textColor, tileBg,
                 iconTypeface = iconTypeface,
-                onOpenApp = { pkg -> launch(pkg) },
+                onOpenApp = { pkg ->
+                    hidePanel()
+                    doLaunch(pkg, vibrateOnLaunch = false, allowFreeform = false)
+                },
                 onConfigure = {
                     hidePanel()
                     getSharedPreferences(Prefs.FILE, MODE_PRIVATE).edit().putString(Prefs.LAUNCH_TAB, "control").apply()
@@ -1698,8 +1701,8 @@ class SidebarOverlayService : Service() {
         doLaunch(pkg)
     }
 
-    private fun doLaunch(pkg: String) {
-        vibrate()
+    private fun doLaunch(pkg: String, vibrateOnLaunch: Boolean = true, allowFreeform: Boolean = true) {
+        if (vibrateOnLaunch) vibrate()
         val intent = packageManager.getLaunchIntentForPackage(pkg)
         if (intent == null) {
             Log.w(TAG, "No launch intent for $pkg")
@@ -1709,8 +1712,8 @@ class SidebarOverlayService : Service() {
             return
         }
         try {
-            val freeform = overlayPrefs().freeformWindows
-            Log.d(TAG, "doLaunch $pkg freeform=$freeform shizuku=${Shizuku.pingBinder()}")
+            val freeform = allowFreeform && overlayPrefs().freeformWindows
+            Log.d(TAG, "doLaunch $pkg freeform=$freeform")
             if (freeform && tryShizukuFreeformLaunch(intent)) return
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             startActivity(intent)
