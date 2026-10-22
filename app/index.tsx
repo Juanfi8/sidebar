@@ -40,13 +40,14 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
 ];
 
 const DEFAULT_PILL: PillSettings = {
-  height: 80, width: 10, position: 0.5, side: "right", opacity: 0.5, theme: "dark", themeChoice: "system", panelColor: "", handleColor: "", panelBorderColor: "",
+  height: 80, width: 10, position: 0.5, side: "right", opacity: 0.5, theme: "dark", themeChoice: "system", panelColor: "", handleColor: "", panelBorderColor: "", accentColor: "",
 };
 
 const COLOR_TARGETS = [
   { key: "panelColor", label: "Expanded", description: "Background of the expanded panel and its popups" },
   { key: "handleColor", label: "Closed", description: "Background of the pull-tab handle when the panel is closed" },
   { key: "panelBorderColor", label: "Border", description: "Outline of the expanded panel and its popups" },
+  { key: "accentColor", label: "Accent", description: "Settings controls, active tiles, sliders, and selection highlights" },
 ] as const;
 type ColorTarget = typeof COLOR_TARGETS[number]["key"];
 
@@ -61,6 +62,7 @@ const PANEL_COLORS: { key: string }[] = [
   { key: "#CCE8DC" },
   { key: "#F5E6CC" },
 ];
+const ACCENT_COLORS = ["", "#6750A4", "#1976D2", "#00897B", "#388E3C", "#F9A825", "#EF6C00", "#D32F2F", "#C2185B"].map(key => ({ key }));
 const DEFAULT_OVERLAY: OverlaySettings = {
   autoHideFullscreen: false, showLabels: true, vibration: true, sensitivity: 16,
   quickControlsEnabled: true, showTorch: true, showAutoRotate: true, showAutoBrightness: true, showRingerMode: true,
@@ -152,6 +154,7 @@ export default function Index() {
   const overlayInitRef = useRef(false);
   const [colorTarget, setColorTarget] = useState<ColorTarget>("panelColor");
   const selectedColor = pill[colorTarget];
+  const colorPresets = colorTarget === "accentColor" ? ACCENT_COLORS : PANEL_COLORS;
   const [hexInput, setHexInput] = useState("");
   const [showHexInput, setShowHexInput] = useState(false);
   const [gestureMenuOpen, setGestureMenuOpen] = useState<string | null>(null);
@@ -204,7 +207,7 @@ export default function Index() {
     ]).then(([perm, svc, pillSettings, overlaySettings, dnd, write, usage, favs]) => {
       setPermissionGranted(perm);
       setServiceEnabled(svc);
-      setPill(pillSettings);
+      setPill({ ...DEFAULT_PILL, ...pillSettings });
       setThemeChoice(pillSettings.themeChoice ?? pillSettings.theme);
       setOverlay(overlaySettings);
       if (overlaySettings.quickControlsEnabled) {
@@ -312,7 +315,7 @@ export default function Index() {
 
   const favSet = useMemo(() => new Set(listData.map(i => i.key)), [listData]);
 
-  const colors = useMemo(() => makeColors(appTheme), [appTheme]);
+  const colors = useMemo(() => makeColors(appTheme, pill.accentColor), [appTheme, pill.accentColor]);
 
   const s = useMemo(() => makeStyles(colors), [colors]);
 
@@ -357,7 +360,7 @@ export default function Index() {
             />
             {selected && (
               <View style={s.checkBadge}>
-                <Ionicons name="checkmark" size={9} color="#fff" />
+                <Ionicons name="checkmark" size={9} color={colors.onPrimary} />
               </View>
             )}
           </View>
@@ -367,7 +370,7 @@ export default function Index() {
         </Pressable>
       );
     },
-    [favSet, s, toggleFav]
+    [favSet, s, toggleFav, colors.onPrimary]
   );
 
   return (
@@ -443,9 +446,9 @@ export default function Index() {
                 </View>
               </View>
               <View style={s.separator} />
-              <View style={[s.settingRow, { alignItems: "flex-start", paddingTop: 14, paddingBottom: 14 }]}>
-                <Text style={[s.settingLabel, { paddingTop: 5 }]}>Colors</Text>
-                <View style={{ flex: 1 }}>
+              <View style={[s.settingRow, { flexDirection: "column", alignItems: "stretch", paddingTop: 14, paddingBottom: 14 }]}>
+                <Text style={s.settingLabel}>Colors</Text>
+                <View>
                   <View style={[s.segmented, { flex: 0, marginBottom: 10 }]}>
                     {COLOR_TARGETS.map(target => (
                       <Pressable
@@ -468,7 +471,7 @@ export default function Index() {
                     {COLOR_TARGETS.find(target => target.key === colorTarget)?.description}
                   </Text>
                   <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
-                    {PANEL_COLORS.map(c => {
+                    {colorPresets.map(c => {
                       const sel = selectedColor === c.key;
                       return (
                         <Pressable key={c.key}
@@ -484,8 +487,8 @@ export default function Index() {
                           }}>
                             {c.key === "" ? (
                               <View style={{ width: 26, height: 26, borderRadius: 13, overflow: "hidden", flexDirection: "row" }}>
-                                <View style={{ flex: 1, backgroundColor: colorTarget === "panelBorderColor" ? "#39FF14" : "#1C1B1F" }} />
-                                <View style={{ flex: 1, backgroundColor: colorTarget === "panelBorderColor" ? "#39FF14" : "#FFFBFE" }} />
+                                <View style={{ flex: 1, backgroundColor: colorTarget === "panelBorderColor" ? "#39FF14" : colorTarget === "accentColor" ? "#6750A4" : "#1C1B1F" }} />
+                                <View style={{ flex: 1, backgroundColor: colorTarget === "panelBorderColor" ? "#39FF14" : colorTarget === "accentColor" ? "#D0BCFF" : "#FFFBFE" }} />
                               </View>
                             ) : (
                               <View style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: c.key }} />
@@ -496,7 +499,7 @@ export default function Index() {
                     })}
                     {/* Custom swatch */}
                     {(() => {
-                      const isCustom = selectedColor !== "" && !PANEL_COLORS.some(c => c.key === selectedColor);
+                      const isCustom = selectedColor !== "" && !colorPresets.some(c => c.key === selectedColor);
                       return (
                         <Pressable accessibilityRole="button" accessibilityLabel="Custom color" onPress={() => { setHexInput(isCustom ? selectedColor : ""); setShowHexInput(v => !v); }}>
                           <View style={{
@@ -797,7 +800,7 @@ export default function Index() {
                           <Ionicons name={item.icon as any} size={22} color={enabled ? colors.onPrimaryContainer : colors.subtext} />
                           {enabled && (
                             <View style={s.checkBadge}>
-                              <Ionicons name="checkmark" size={9} color="#fff" />
+                              <Ionicons name="checkmark" size={9} color={colors.onPrimary} />
                             </View>
                           )}
                         </View>

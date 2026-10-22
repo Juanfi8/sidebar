@@ -26,6 +26,7 @@ export interface PillSettings {
   panelColor: string;
   handleColor: string;
   panelBorderColor: string;
+  accentColor: string;
 }
 
 export interface OverlaySettings {

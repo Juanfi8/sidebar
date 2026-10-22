@@ -33,7 +33,7 @@ export function SliderRow({
             onValueChange={onChange}
             minimumTrackTintColor="transparent"
             maximumTrackTintColor="transparent"
-            thumbTintColor="#FFFFFF"
+            thumbTintColor={colors.onPrimary}
           />
         </View>
         {rightEdge && <Text style={s.sliderEdge}>{rightEdge}</Text>}

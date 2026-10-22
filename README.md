@@ -16,7 +16,7 @@ An Android overlay sidebar for quick access to favorite apps. A pull-tab handle 
 - Persists across reboots via a foreground service and boot receiver
 - Auto-hides in fullscreen apps (configurable); battery-friendly polling that pauses when the screen is off
 - **Material You** config UI with dynamic wallpaper colors on Android 12+; four tabs (Handle, Behavior, Control, Apps) with swipe navigation
-- **Handle tab**: side (left / right / both), theme (dark / light / system), separate expanded-panel background, closed-handle background, and panel border colors (presets, color wheel, or hex code), position, height, width, opacity
+- **Handle tab**: side (left / right / both), theme (dark / light / system), separate expanded-panel background, closed-handle background, panel border, and accent colors (presets, color wheel, or hex code), position, height, width, opacity
 - **Behavior tab**: auto-hide in fullscreen, app labels, vibration feedback, swipe sensitivity, pill gesture mapping, recent apps toggle, keyboard-on-All-Apps toggle
 - **Control tab**: redesigned icon grid with Active Controls strip (drag-to-reorder) and All Controls grid (tap to toggle); permission management for overlay, Do Not Disturb, system settings, and Usage Access
 
@@ -46,6 +46,8 @@ Additionally : if the freeform mode windows (floating windows) doesn't seem to w
 3. In the app, grant the "Display over other apps" permission, then toggle the service on.
 
 4. Optionally grant **Do Not Disturb** and **Modify system settings** permissions (Control tab) to enable the ringer and brightness controls in the panel.
+
+Under **Handle → Colors → Accent**, choose a preset, use the color wheel, or enter a hex code. The accent applies to settings controls, active overlay tiles, brightness and volume sliders, and app selection highlights. Text colors adapt for contrast. The default swatch restores the built-in palette; panel backgrounds and borders keep their separate settings.
 
 ## Development
 

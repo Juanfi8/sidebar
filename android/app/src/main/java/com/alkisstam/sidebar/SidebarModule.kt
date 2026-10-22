@@ -142,6 +142,7 @@ class SidebarModule(private val reactContext: ReactApplicationContext) :
         if (settings.hasKey("panelColor")) prefs.putString(Prefs.PANEL_COLOR, settings.getString("panelColor") ?: "")
         if (settings.hasKey("handleColor")) prefs.putString(Prefs.HANDLE_COLOR, settings.getString("handleColor") ?: "")
         if (settings.hasKey("panelBorderColor")) prefs.putString(Prefs.PANEL_BORDER_COLOR, settings.getString("panelBorderColor") ?: "")
+        if (settings.hasKey("accentColor")) prefs.putString(Prefs.ACCENT_COLOR, settings.getString("accentColor") ?: "")
         prefs.apply()
         val serviceEnabled = reactContext.getSharedPreferences(Prefs.FILE, Context.MODE_PRIVATE)
             .getBoolean(Prefs.SERVICE_ENABLED, false)
@@ -173,6 +174,7 @@ class SidebarModule(private val reactContext: ReactApplicationContext) :
         // Preserve the old shared color until a separate handle color is saved.
         map.putString("handleColor", prefs.getString(Prefs.HANDLE_COLOR, prefs.getString(Prefs.PANEL_COLOR, "")) ?: "")
         map.putString("panelBorderColor", prefs.getString(Prefs.PANEL_BORDER_COLOR, "") ?: "")
+        map.putString("accentColor", prefs.getString(Prefs.ACCENT_COLOR, "") ?: "")
         promise.resolve(map)
     }
 

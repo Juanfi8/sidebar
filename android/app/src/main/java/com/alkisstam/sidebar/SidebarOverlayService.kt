@@ -29,6 +29,7 @@ import android.view.animation.DecelerateInterpolator
 import android.view.animation.OvershootInterpolator
 import android.widget.*
 import androidx.core.app.NotificationCompat
+import androidx.core.graphics.ColorUtils
 import org.json.JSONArray
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
@@ -216,7 +217,8 @@ class SidebarOverlayService : Service() {
     data class PillPrefs(
         val height: Int, val width: Int, val position: Float,
         val side: String, val opacity: Float, val theme: String,
-        val panelColor: String, val handleColor: String, val panelBorderColor: String
+        val panelColor: String, val handleColor: String, val panelBorderColor: String,
+        val accentColor: String
     )
 
     data class OverlayPrefs(
@@ -265,7 +267,8 @@ class SidebarOverlayService : Service() {
             theme,
             p.getString(Prefs.PANEL_COLOR, "") ?: "",
             p.getString(Prefs.HANDLE_COLOR, p.getString(Prefs.PANEL_COLOR, "")) ?: "",
-            p.getString(Prefs.PANEL_BORDER_COLOR, "") ?: ""
+            p.getString(Prefs.PANEL_BORDER_COLOR, "") ?: "",
+            p.getString(Prefs.ACCENT_COLOR, "") ?: ""
         )
     }
 
@@ -299,6 +302,13 @@ class SidebarOverlayService : Service() {
     private val panelOutlineColor: Int
         get() = runCatching { Color.parseColor(pillPrefs().panelBorderColor) }
             .getOrDefault(Color.parseColor("#39FF14"))
+
+    private fun resolveAccentColor(rawColor: String, fallback: Int): Int =
+        if (rawColor.isEmpty()) fallback
+        else runCatching { Color.parseColor(rawColor) }.getOrDefault(fallback)
+
+    private fun contrastForeground(background: Int): Int =
+        if (ColorUtils.calculateLuminance(background) > 0.179) Color.BLACK else Color.WHITE
 
     private fun makeOutlinedPanelBackground(panelBg: Int, cornerRadiusDp: Int): GradientDrawable =
         GradientDrawable().apply {
@@ -683,8 +693,8 @@ class SidebarOverlayService : Service() {
             val hsv = FloatArray(3); Color.colorToHSV(panelBg, hsv); hsv[2] > 0.5f
         } else light
         val tileBg     = if (effectiveLight) Color.argb(130, 115, 105, 130) else Color.argb(130, 55, 52, 62)
-        val tileActive = if (effectiveLight) Color.argb(255, 103, 80, 164)  else Color.argb(255, 79, 55, 139)
-        val labelColor = if (effectiveLight) Color.argb(230, 28, 27, 31)    else Color.argb(230, 230, 225, 229)
+        val tileActive = resolveAccentColor(prefs.accentColor,
+            if (effectiveLight) Color.argb(255, 103, 80, 164) else Color.argb(255, 79, 55, 139))
 
         val ctrl = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -697,7 +707,7 @@ class SidebarOverlayService : Service() {
 
         if (oPrefs.showBrightnessSlider) {
             val sliderRow = makeBrightnessSliderRow(
-                "", getBrightness(), 0, 255, labelColor, tileActive, tileBg
+                "", getBrightness(), 0, 255, contrastForeground(tileActive), tileActive, tileBg
             ) { setBrightness(it) }
             ctrl.addView(sliderRow, LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(44)
@@ -804,7 +814,8 @@ class SidebarOverlayService : Service() {
             val hsv = FloatArray(3); Color.colorToHSV(panelBg, hsv); hsv[2] > 0.5f
         } else light
         val tileBg     = if (effectiveLight) Color.argb(130, 115, 105, 130) else Color.argb(130, 55, 52, 62)
-        val tileActive = if (effectiveLight) Color.argb(255, 103, 80, 164)  else Color.argb(255, 79, 55, 139)
+        val tileActive = resolveAccentColor(prefs.accentColor,
+            if (effectiveLight) Color.argb(255, 103, 80, 164) else Color.argb(255, 79, 55, 139))
         val labelColor = if (effectiveLight) Color.argb(230, 28, 27, 31)    else Color.argb(230, 230, 225, 229)
 
         val am = getSystemService(AUDIO_SERVICE) as AudioManager
@@ -1249,13 +1260,29 @@ class SidebarOverlayService : Service() {
             ).apply { topMargin = dp(1) }
         }
 
+        val labelTv = TextView(this).apply {
+            text = label
+            textSize = 10f
+            gravity = Gravity.CENTER
+            maxLines = 1
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(2) }
+        }
+
         fun update() {
+            val active = getActive()
+            val foreground = if (active) contrastForeground(activeColor) else Color.WHITE
             tile.background = GradientDrawable().apply {
-                setColor(if (getActive()) activeColor else bgColor)
+                setColor(if (active) activeColor else bgColor)
                 cornerRadius = dp(12).toFloat()
             }
             iconTv.text = getIcon()
             subtitleTv.text = getSubtitle()
+            iconTv.setTextColor(foreground)
+            labelTv.setTextColor(foreground)
+            subtitleTv.setTextColor(if (active) foreground else ColorUtils.setAlphaComponent(foreground, 180))
         }
         update()
 
@@ -1282,17 +1309,7 @@ class SidebarOverlayService : Service() {
         }
 
         tile.addView(iconTv)
-        tile.addView(TextView(this).apply {
-            text = label
-            textSize = 10f
-            gravity = Gravity.CENTER
-            setTextColor(Color.WHITE)
-            maxLines = 1
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = dp(2) }
-        })
+        tile.addView(labelTv)
         tile.addView(subtitleTv)
         return tile
     }
@@ -1592,7 +1609,7 @@ class SidebarOverlayService : Service() {
                 background = GradientDrawable().apply {
                     setColor(Color.TRANSPARENT)
                     cornerRadius = dp(12).toFloat()
-                    setStroke(dp(2), panelOutlineColor)
+                    setStroke(dp(2), resolveAccentColor(pillPrefs().accentColor, panelOutlineColor))
                 }
             }
             setOnClickListener { onClick() }

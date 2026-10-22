@@ -1,8 +1,9 @@
 import { StyleSheet } from "react-native";
+import { makeAccentColors } from "./accent-colors";
 
-export function makeColors(scheme: 'light' | 'dark') {
+export function makeColors(scheme: 'light' | 'dark', accentColor = "") {
   const dark = scheme === "dark";
-  return {
+  const colors = {
     bg: dark ? "#141218" : "#FFFBFE",
     surfaceContainer: dark ? "#211F26" : "#F3EFF7",
     surfaceContainerHigh: dark ? "#2B2930" : "#EDE8F2",
@@ -21,6 +22,7 @@ export function makeColors(scheme: 'light' | 'dark') {
     errorContainer: dark ? "#8C1D18" : "#F9DEDC",
     onErrorContainer: dark ? "#F2B8B5" : "#410E0B",
   };
+  return { ...colors, ...makeAccentColors(accentColor, colors.bg, dark) };
 }
 
 export type AppColors = ReturnType<typeof makeColors>;
