@@ -721,6 +721,8 @@ class SidebarOverlayService : Service() {
         if (oPrefs.showMediaPlayer) {
             val textColor = contrastForeground(ColorUtils.compositeColors(tileBg, panelBg))
             ctrl.addView(SidebarMediaPlayerView(this, tileActive, textColor, tileBg,
+                iconTypeface = iconTypeface,
+                onOpenApp = { pkg -> launch(pkg) },
                 onConfigure = {
                     hidePanel()
                     getSharedPreferences(Prefs.FILE, MODE_PRIVATE).edit().putString(Prefs.LAUNCH_TAB, "control").apply()

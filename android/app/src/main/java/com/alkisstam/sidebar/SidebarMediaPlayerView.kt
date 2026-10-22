@@ -2,7 +2,6 @@ package com.alkisstam.sidebar
 
 import android.content.Context
 import android.content.SharedPreferences
-import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -17,7 +16,6 @@ import android.text.TextUtils
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
-import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -30,6 +28,8 @@ internal class SidebarMediaPlayerView(
     private val accentColor: Int,
     private val textColor: Int,
     cardColor: Int,
+    private val iconTypeface: Typeface,
+    private val onOpenApp: (String) -> Unit,
     private val onConfigure: () -> Unit,
     private val onGrantAccess: () -> Unit
 ) : LinearLayout(context) {
@@ -48,10 +48,14 @@ internal class SidebarMediaPlayerView(
         setTextColor(textColor)
         setPadding(dp(4), dp(8), dp(4), dp(8))
     }
-    private val artwork = ImageView(context).apply {
+    private val artwork = object : ImageView(context) {
+        override fun getAccessibilityClassName(): CharSequence = "android.widget.Button"
+    }.apply {
         scaleType = ImageView.ScaleType.CENTER_CROP
         background = shape(ColorUtils.setAlphaComponent(textColor, 24), 8)
         clipToOutline = true
+        isFocusable = true
+        setOnClickListener { openPlayingApp() }
     }
     private val title = TextView(context).apply {
         textSize = 12f
@@ -76,20 +80,27 @@ internal class SidebarMediaPlayerView(
             addView(artist)
         }, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = dp(8) })
     }
-    private fun button(icon: Int, label: String, command: Command) = ImageButton(context).apply {
-        setImageResource(icon)
+    private fun button(icon: String, label: String, command: Command) = object : TextView(context) {
+        override fun getAccessibilityClassName(): CharSequence = "android.widget.Button"
+    }.apply {
+        text = icon
+        typeface = iconTypeface
+        textSize = 24f
+        gravity = Gravity.CENTER
+        includeFontPadding = false
         contentDescription = label
-        imageTintList = ColorStateList.valueOf(textColor)
+        setTextColor(textColor)
         background = shape(Color.TRANSPARENT, 22)
+        isFocusable = true
         setOnClickListener { perform(command) }
     }
-    private val previous = button(android.R.drawable.ic_media_previous, "Previous track", Command.PREVIOUS)
-    private val toggle = button(android.R.drawable.ic_media_play, "Play", Command.TOGGLE).apply {
+    private val previous = button("\uE045", "Previous track", Command.PREVIOUS)
+    private val toggle = button("\uE037", "Play", Command.TOGGLE).apply {
         background = shape(accentColor, 22)
-        imageTintList = ColorStateList.valueOf(
+        setTextColor(
             if (ColorUtils.calculateLuminance(accentColor) > 0.179) Color.BLACK else Color.WHITE)
     }
-    private val next = button(android.R.drawable.ic_media_next, "Next track", Command.NEXT)
+    private val next = button("\uE044", "Next track", Command.NEXT)
     private val controls = LinearLayout(context).apply {
         orientation = HORIZONTAL
         gravity = Gravity.CENTER
@@ -258,19 +269,33 @@ internal class SidebarMediaPlayerView(
             ?: metadata?.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON)
         if (bitmap != null && !bitmap.isRecycled) {
             artwork.setImageBitmap(bitmap)
-            artwork.contentDescription = "Album artwork"
         } else {
             artwork.setImageDrawable(runCatching { context.packageManager.getApplicationIcon(controller.packageName) }.getOrNull())
-            artwork.contentDescription = "Media app icon"
         }
+        val appName = runCatching {
+            val info = context.packageManager.getApplicationInfo(controller.packageName, 0)
+            context.packageManager.getApplicationLabel(info).toString()
+        }.getOrDefault(controller.packageName)
+        artwork.contentDescription = "Open $appName"
         session = controller.sessionToken
         val state = controller.playbackState
         val playing = activity(state) in setOf(MediaActivity.PLAYING, MediaActivity.TRANSITIONING)
-        toggle.setImageResource(if (playing) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play)
+        toggle.text = if (playing) "\uE034" else "\uE037"
         toggle.contentDescription = if (playing) "Pause" else "Play"
         setEnabled(previous, supports(state, Command.PREVIOUS))
         setEnabled(toggle, supports(state, Command.TOGGLE))
         setEnabled(next, supports(state, Command.NEXT))
+    }
+
+    private fun openPlayingApp() {
+        val controller = current ?: return
+        if (!prefs.getBoolean(Prefs.SHOW_MEDIA_PLAYER, false) ||
+            !SidebarMediaAccess.isGranted(context) || controller.packageName !in Prefs.mediaApps(prefs)) {
+            startListening()
+            return
+        }
+        if (session != controller.sessionToken || controller.sessionToken in destroyed) return
+        onOpenApp(controller.packageName)
     }
 
     private fun supports(state: PlaybackState?, command: Command): Boolean {
