@@ -6,8 +6,8 @@ An Android overlay sidebar for quick access to favorite apps. A pull-tab handle 
 
 - **Pull-tab handle** on the screen edge — left, right, or both sides simultaneously — with configurable vertical position, size (down to 2 dp), and opacity (down to fully transparent)
 - **Pill gestures**: swipe in, swipe up, swipe down, and double tap each map to a configurable action — open panel, expand notifications, expand quick settings, or open all apps
-- **Slim sidebar panel** (64 dp column): Tools button at top, circular app icons below; tap any app to launch it
-- **Tools panel**: opens beside the sidebar with quick-control tiles in a 3-column grid — Torch, Auto-rotate, Auto-brightness, Ringer, Quick Share, Power, QR scanner, Do Not Disturb; drag-to-reorder tiles from settings
+- **Slim sidebar panel** (64 dp column): Apps button at top opens the full app drawer, circular favorite app icons below; tap any app to launch it
+- **Quick Controls panel**: opens automatically beside the expanded sidebar when enabled, with tiles in a 3-column grid — Torch, Auto-rotate, Auto-brightness, Ringer, Quick Share, Power, QR scanner, Do Not Disturb, and Volume. The Edit and All Apps tiles are removed; use the sidebar's Apps button for the app drawer. The Volume panel has a back button to return to Quick Controls.
 - **Brightness and volume sliders** in the tools panel; volume panel with independent Media, Ring, Notification, and Alarm sliders
 - **Mini media player** in Quick Controls: album art (or app icon when unavailable), song, artist, and Material-style previous/play-pause/next controls. Tap the artwork to open the displayed media app normally, without vibration or a freeform-window launch. Choose allowed apps under Control → Media Player; only selected apps with Android media sessions appear. Playing sessions take priority and paused tracks can be resumed. Requires notification access; unsupported playback actions are disabled.
 - **Recent apps**: top rows of the sidebar show the four most recently used apps (cached async for fast panel open); requires Usage Access permission
@@ -50,7 +50,7 @@ Additionally : if the freeform mode windows (floating windows) doesn't seem to w
 
 Under **Handle → Colors → Accent**, choose a preset, use the color wheel, or enter a hex code. The accent applies to settings controls, active overlay tiles, brightness and volume sliders, and app selection highlights. Text colors adapt for contrast. The default swatch restores the built-in palette; panel backgrounds and borders keep their separate settings.
 
-To enable the mini media player, open **Control → Media Player**, turn on **Show in Quick Controls**, grant **Notification access**, and select apps under **Media apps**. Start playback in a selected app, then open the sidebar's Tools panel. The player uses media-session metadata and controls, without reading or storing notification contents. Not every media app exposes a controllable Android media session.
+To enable the mini media player, open **Control → Media Player**, turn on **Show in Quick Controls**, grant **Notification access**, and select apps under **Media apps**. Start playback in a selected app, then expand the sidebar; Quick Controls opens automatically when enabled. The player uses media-session metadata and controls, without reading or storing notification contents. Not every media app exposes a controllable Android media session.
 
 ## Development
 

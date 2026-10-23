@@ -747,7 +747,10 @@ export default function Index() {
               <Text style={s.sectionTitle}>Quick Controls</Text>
               {/* Quick controls header — enable toggle + expand/collapse */}
               <Pressable style={s.row} onPress={toggleQuickControls}>
-                <Text style={[s.rowLabel, { flex: 1 }]}>Enable Quick Controls</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.rowLabel}>Enable Quick Controls</Text>
+                  <Text style={s.rowSub}>Open automatically when the sidebar expands</Text>
+                </View>
                 <View onStartShouldSetResponder={() => true}>
                   <Switch
                     value={overlay.quickControlsEnabled}

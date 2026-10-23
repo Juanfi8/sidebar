@@ -511,7 +511,7 @@ class SidebarOverlayService : Service() {
         val effectiveSide = if (prefs.side == "both") lastActiveSide else prefs.side
 
         val screenHeight = resources.displayMetrics.heightPixels
-        // Tools(56)+divider(1)+padding(12)+6 cells×68dp
+        // Apps(56)+divider(1)+padding(12)+6 cells×68dp
         val maxPanelHeight = dp(477)
         val recents = if (oPrefs.showRecentApps) cachedRecentApps.take(4) else emptyList()
         val totalAppCount = recents.size + pkgs.size
@@ -549,22 +549,23 @@ class SidebarOverlayService : Service() {
             outlineProvider = ViewOutlineProvider.BACKGROUND
         }
 
-        val toolsBtn = LinearLayout(this).apply {
+        val appsBtn = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(56))
             isClickable = true
             isFocusable = true
+            contentDescription = "Open all apps"
         }
-        toolsBtn.addView(TextView(this).apply {
-            text = ""
+        appsBtn.addView(TextView(this).apply {
+            text = "\uE5C3"
             textSize = 20f
             gravity = Gravity.CENTER
             setTextColor(iconColor)
             typeface = iconTypeface
         })
-        toolsBtn.addView(TextView(this).apply {
-            text = "Tools"
+        appsBtn.addView(TextView(this).apply {
+            text = "Apps"
             textSize = 9f
             gravity = Gravity.CENTER
             setTextColor(iconColor)
@@ -572,8 +573,8 @@ class SidebarOverlayService : Service() {
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { topMargin = dp(2) }
         })
-        toolsBtn.setOnClickListener { toggleControlsPanel(prefs, oPrefs, effectiveSide, panelY) }
-        root.addView(toolsBtn)
+        appsBtn.setOnClickListener { showAllAppsDrawer() }
+        root.addView(appsBtn)
 
 
         root.addView(View(this).apply {
@@ -673,23 +674,13 @@ class SidebarOverlayService : Service() {
             .translationX(0f).alpha(1f).scaleX(1f).scaleY(1f)
             .setDuration(220).setInterpolator(DecelerateInterpolator(2.5f))
             .start()
+        if (oPrefs.quickControlsEnabled) showControlsPanel(prefs, oPrefs, effectiveSide, panelY)
     }
 
-    private fun toggleControlsPanel(prefs: PillPrefs, oPrefs: OverlayPrefs, effectiveSide: String, panelY: Int) {
+    private fun showControlsPanel(prefs: PillPrefs, oPrefs: OverlayPrefs, effectiveSide: String, panelY: Int) {
+        if (controlsPanelView != null) return
         volumePanelView?.let { runCatching { wm.removeViewImmediate(it) } }
         volumePanelView = null
-
-        val existing = controlsPanelView
-        if (existing != null) {
-            controlsPanelView = null
-            val slideTo = if (effectiveSide == "left") -dp(220).toFloat() else dp(220).toFloat()
-            existing.animate().withLayer()
-                .translationX(slideTo).alpha(0f)
-                .setDuration(160).setInterpolator(AccelerateInterpolator(2.2f))
-                .withEndAction { runCatching { wm.removeViewImmediate(existing) } }
-                .start()
-            return
-        }
 
         val light = prefs.theme == "light"
         val panelBg    = resolvePanelBg(prefs.panelColor, 248, light)
@@ -759,6 +750,11 @@ class SidebarOverlayService : Service() {
             if (id !in knownOrder) builder?.invoke()?.let { tileViews.add(it) }
         }
 
+        if (oPrefs.showVolume) {
+            tileViews.add(makeControlTile("Volume", { "" }, tileBg, tileActive,
+                { false }, { "" }) { toggleVolumePanel(prefs, effectiveSide, panelY) })
+        }
+
         tileViews.chunked(3).forEachIndexed { idx, chunk ->
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -776,26 +772,6 @@ class SidebarOverlayService : Service() {
             }
             ctrl.addView(row)
         }
-
-        val actRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { if (tileViews.isNotEmpty() || oPrefs.showBrightnessSlider) topMargin = dp(6) }
-        }
-        if (oPrefs.showVolume) actRow.addView(makeControlTile("Volume", { "" }, tileBg, tileActive,
-            { false }, { "" }) { toggleVolumePanel(prefs, effectiveSide, panelY) })
-        actRow.addView(makeControlTile("All Apps", { "" }, tileBg, tileActive,
-            { false }, { "" }) { showAllAppsDrawer() })
-        actRow.addView(makeControlTile("Edit", { "" }, tileBg, tileActive,
-            { false }, { "" }) {
-            hidePanel()
-            getSharedPreferences(Prefs.FILE, MODE_PRIVATE).edit().putString(Prefs.LAUNCH_TAB, "apps").apply()
-            packageManager.getLaunchIntentForPackage(packageName)
-                ?.apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT) }
-                ?.let { startActivity(it) }
-        })
-        ctrl.addView(actRow)
 
         val screenHeight = resources.displayMetrics.heightPixels
         val panelGravity = if (effectiveSide == "left") Gravity.START or Gravity.TOP
@@ -878,6 +854,20 @@ class SidebarOverlayService : Service() {
             clipToPadding = false
             setPadding(dp(8), dp(12), dp(8), dp(12))
         }
+
+        ctrl.addView(TextView(this).apply {
+            text = "Back to Quick Controls"
+            textSize = 12f
+            setTextColor(labelColor)
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(8), 0, dp(8), 0)
+            isFocusable = true
+            contentDescription = "Back to Quick Controls"
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(44)
+            ).apply { bottomMargin = dp(8) }
+            setOnClickListener { showControlsPanel(pillPrefs(), overlayPrefs(), effectiveSide, panelY) }
+        })
 
         val streams = listOf(
             Triple(AudioManager.STREAM_MUSIC,        "", "Media"),
@@ -969,6 +959,8 @@ class SidebarOverlayService : Service() {
         ctrl.addView(row)
 
         val screenHeight = resources.displayMetrics.heightPixels
+        ctrl.measure(View.MeasureSpec.makeMeasureSpec(dp(220), View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
         val panelGravity = if (effectiveSide == "left") Gravity.START or Gravity.TOP
                            else Gravity.END or Gravity.TOP
         wm.addView(ctrl, WindowManager.LayoutParams(
@@ -978,7 +970,7 @@ class SidebarOverlayService : Service() {
                     WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                     WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
-        ).apply { gravity = panelGravity; x = dp(76); y = panelY.coerceIn(0, maxOf(0, screenHeight - dp(300))) })
+        ).apply { gravity = panelGravity; x = dp(76); y = panelY.coerceIn(0, maxOf(0, screenHeight - ctrl.measuredHeight)) })
 
         volumePanelView = ctrl
 
