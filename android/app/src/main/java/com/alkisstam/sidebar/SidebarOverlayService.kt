@@ -27,6 +27,7 @@ import android.view.*
 import android.view.animation.AccelerateInterpolator
 import android.view.animation.DecelerateInterpolator
 import android.view.animation.OvershootInterpolator
+import android.view.animation.PathInterpolator
 import android.widget.*
 import androidx.core.app.NotificationCompat
 import androidx.core.graphics.ColorUtils
@@ -55,6 +56,7 @@ class SidebarOverlayService : Service() {
 
     private var controlsPanelView: View? = null
     private var volumePanelView: View? = null
+    private var panelEntranceAnimator: AnimatorSet? = null
 
     private val iconTypeface: android.graphics.Typeface by lazy {
         android.graphics.Typeface.createFromAsset(assets, "fonts/MaterialIcons-Regular.ttf")
@@ -179,6 +181,8 @@ class SidebarOverlayService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        panelEntranceAnimator?.cancel()
+        panelEntranceAnimator = null
         Shizuku.removeRequestPermissionResultListener(shizukuPermListener)
         fsHandler.removeCallbacks(fsRunnable)
         appLoadExecutor.shutdown()
@@ -500,6 +504,46 @@ class SidebarOverlayService : Service() {
 
     // ── Panel ─────────────────────────────────────────────────────────────────
 
+    private fun preparePanelEntrance(view: View, side: String) {
+        view.translationX = if (side == "left") -dp(64).toFloat() else dp(64).toFloat()
+        view.alpha = 0f
+    }
+
+    private fun animatePanelEntrance(views: List<View>) {
+        panelEntranceAnimator?.cancel()
+        val animation = AnimatorSet().apply {
+            playTogether(views.flatMap { view -> listOf(
+                ObjectAnimator.ofFloat(view, View.TRANSLATION_X, 0f),
+                ObjectAnimator.ofFloat(view, View.ALPHA, 1f)
+            ) })
+            duration = 300
+            interpolator = PathInterpolator(0.2f, 0f, 0.2f, 1f)
+        }
+        panelEntranceAnimator = animation
+        val anchor = views.first()
+        // These are separate overlay windows. Wait for both layouts before starting
+        // a single animation clock, so the media/control window cannot appear late.
+        anchor.viewTreeObserver.addOnPreDrawListener(object : ViewTreeObserver.OnPreDrawListener {
+            override fun onPreDraw(): Boolean {
+                if (!shown || panelEntranceAnimator !== animation) {
+                    anchor.viewTreeObserver.removeOnPreDrawListener(this)
+                } else if (views.all { it.isAttachedToWindow && it.isLaidOut }) {
+                    anchor.viewTreeObserver.removeOnPreDrawListener(this)
+                    animation.start()
+                } else {
+                    anchor.postInvalidateOnAnimation()
+                }
+                return true
+            }
+        })
+        anchor.postInvalidateOnAnimation()
+    }
+
+    private fun companionPanelY(panelY: Int, height: Int): Int {
+        val maxY = maxOf(dp(8), resources.displayMetrics.heightPixels - height - dp(8))
+        return (panelY + dp(64)).coerceIn(dp(8), maxY)
+    }
+
     private fun showPanel() {
         if (shown) return
         shown = true
@@ -652,6 +696,7 @@ class SidebarOverlayService : Service() {
 
         val panelGravity = if (effectiveSide == "left") Gravity.START or Gravity.TOP
                            else Gravity.END or Gravity.TOP
+        preparePanelEntrance(root, effectiveSide)
         wm.addView(root, WindowManager.LayoutParams(
             dp(64), panelHeight,
             overlayType(),
@@ -665,20 +710,13 @@ class SidebarOverlayService : Service() {
         handleView?.visibility = View.INVISIBLE
         handleViewAlt?.visibility = View.INVISIBLE
 
-        val slideFrom = if (effectiveSide == "left") -dp(64).toFloat() else dp(64).toFloat()
-        root.translationX = slideFrom
-        root.alpha = 0f
-        root.scaleX = 0.92f
-        root.scaleY = 0.96f
-        root.animate().withLayer()
-            .translationX(0f).alpha(1f).scaleX(1f).scaleY(1f)
-            .setDuration(220).setInterpolator(DecelerateInterpolator(2.5f))
-            .start()
-        if (oPrefs.quickControlsEnabled) showControlsPanel(prefs, oPrefs, effectiveSide, panelY)
+        if (oPrefs.quickControlsEnabled) showControlsPanel(prefs, oPrefs, effectiveSide, panelY, animate = false)
+        animatePanelEntrance(listOfNotNull(root, controlsPanelView))
     }
 
-    private fun showControlsPanel(prefs: PillPrefs, oPrefs: OverlayPrefs, effectiveSide: String, panelY: Int) {
+    private fun showControlsPanel(prefs: PillPrefs, oPrefs: OverlayPrefs, effectiveSide: String, panelY: Int, animate: Boolean = true) {
         if (controlsPanelView != null) return
+        if (animate) panelEntranceAnimator?.end()
         volumePanelView?.let { runCatching { wm.removeViewImmediate(it) } }
         volumePanelView = null
 
@@ -795,28 +833,25 @@ class SidebarOverlayService : Service() {
                     WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                     WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
-        ).apply { gravity = panelGravity; x = dp(76); y = panelY.coerceIn(0, maxOf(0, screenHeight - scroll.measuredHeight)) }
+        ).apply { gravity = panelGravity; x = dp(76); y = companionPanelY(panelY, scroll.measuredHeight) }
         scroll.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
-            val newY = panelY.coerceIn(0, maxOf(0, screenHeight - scroll.height))
+            val newY = companionPanelY(panelY, scroll.height)
             if (params.y != newY && scroll.isAttachedToWindow) {
                 params.y = newY
                 runCatching { wm.updateViewLayout(scroll, params) }
             }
         }
+        preparePanelEntrance(scroll, effectiveSide)
         wm.addView(scroll, params)
 
         controlsPanelView = scroll
 
-        val slideFrom = if (effectiveSide == "left") -dp(220).toFloat() else dp(220).toFloat()
-        scroll.translationX = slideFrom
-        scroll.alpha = 0f
-        scroll.animate().withLayer()
-            .translationX(0f).alpha(1f)
-            .setDuration(220).setInterpolator(DecelerateInterpolator(2.5f))
-            .start()
+        if (animate) animatePanelEntrance(listOf(scroll))
     }
 
     private fun toggleVolumePanel(prefs: PillPrefs, effectiveSide: String, panelY: Int) {
+        panelEntranceAnimator?.end()
+        panelEntranceAnimator = null
         controlsPanelView?.let { runCatching { wm.removeViewImmediate(it) } }
         controlsPanelView = null
 
@@ -958,11 +993,11 @@ class SidebarOverlayService : Service() {
         }
         ctrl.addView(row)
 
-        val screenHeight = resources.displayMetrics.heightPixels
         ctrl.measure(View.MeasureSpec.makeMeasureSpec(dp(220), View.MeasureSpec.EXACTLY),
             View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
         val panelGravity = if (effectiveSide == "left") Gravity.START or Gravity.TOP
                            else Gravity.END or Gravity.TOP
+        preparePanelEntrance(ctrl, effectiveSide)
         wm.addView(ctrl, WindowManager.LayoutParams(
             dp(220), WindowManager.LayoutParams.WRAP_CONTENT,
             overlayType(),
@@ -970,28 +1005,24 @@ class SidebarOverlayService : Service() {
                     WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                     WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
-        ).apply { gravity = panelGravity; x = dp(76); y = panelY.coerceIn(0, maxOf(0, screenHeight - ctrl.measuredHeight)) })
+        ).apply { gravity = panelGravity; x = dp(76); y = companionPanelY(panelY, ctrl.measuredHeight) })
 
         volumePanelView = ctrl
 
-        val slideFrom = if (effectiveSide == "left") -dp(220).toFloat() else dp(220).toFloat()
-        ctrl.translationX = slideFrom
-        ctrl.alpha = 0f
-        ctrl.animate().withLayer()
-            .translationX(0f).alpha(1f)
-            .setDuration(220).setInterpolator(DecelerateInterpolator(2.5f))
-            .start()
+        animatePanelEntrance(listOf(ctrl))
     }
 
     private fun hidePanel() {
         if (!shown) return
         shown = false
+        panelEntranceAnimator?.cancel()
+        panelEntranceAnimator = null
         appLoadExecutor.submit { cachedRecentApps = getRecentApps(4) }
-        controlsPanelView?.let { runCatching { wm.removeViewImmediate(it) } }
+        val companions = listOfNotNull(controlsPanelView, volumePanelView)
         controlsPanelView = null
-        volumePanelView?.let { runCatching { wm.removeViewImmediate(it) } }
         volumePanelView = null
         val panel = panelView ?: run {
+            companions.forEach { runCatching { wm.removeViewImmediate(it) } }
             dismissOverlay?.let { runCatching { wm.removeViewImmediate(it) } }
             dismissOverlay = null
             handleView?.visibility = View.VISIBLE
@@ -1007,19 +1038,26 @@ class SidebarOverlayService : Service() {
         val handleAlt = handleViewAlt
 
         val slideTo = if (effectiveSide == "left") -dp(64).toFloat() else dp(64).toFloat()
-        panel.animate().withLayer()
-            .translationX(slideTo).alpha(0f)
-            .setDuration(160).setInterpolator(AccelerateInterpolator(2.2f))
-            .withEndAction {
-                panel.alpha = 0f
-                runCatching { wm.removeViewImmediate(panel) }
-                overlay?.let { runCatching { wm.removeViewImmediate(it) } }
-                if (!showingDrawer) {
-                    handle?.visibility = View.VISIBLE
-                    handleAlt?.visibility = View.VISIBLE
+        val closingViews = listOf(panel) + companions
+        AnimatorSet().apply {
+            playTogether(closingViews.flatMap { view -> listOf(
+                ObjectAnimator.ofFloat(view, View.TRANSLATION_X, slideTo),
+                ObjectAnimator.ofFloat(view, View.ALPHA, 0f)
+            ) })
+            duration = 200
+            interpolator = PathInterpolator(0.4f, 0f, 1f, 1f)
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    closingViews.forEach { runCatching { wm.removeViewImmediate(it) } }
+                    overlay?.let { runCatching { wm.removeViewImmediate(it) } }
+                    if (!shown && !showingDrawer) {
+                        handle?.visibility = View.VISIBLE
+                        handleAlt?.visibility = View.VISIBLE
+                    }
                 }
-            }
-            .start()
+            })
+            start()
+        }
     }
 
     // ── All Apps drawer ───────────────────────────────────────────────────────

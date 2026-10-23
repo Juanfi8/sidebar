@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.0.5] - 2026-10-23
+
+### Changed
+
+- Quick Controls and Volume open 64 dp below the sidebar's top, with screen-edge clamping to keep controls reachable.
+- The apps sidebar and Quick Controls slide and fade in together using one animation clock, after both windows finish layout.
+- Both panels animate out together when dismissed, including when opening the app drawer.
+
 ## [2.0.4] - 2026-06-16
 
 ### Changed
